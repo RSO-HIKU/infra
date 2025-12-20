@@ -1,0 +1,210 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    build:
+      context: ./backend/database
+      dockerfile: Dockerfile
+    container_name: hiku-postgres
+    environment:
+      POSTGRES_DB: hikudb
+      POSTGRES_USER: hikuuser
+      POSTGRES_PASSWORD: hikupassword
+    ports:
+      - "11000:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - hiku-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hikuuser -d hikudb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin - PostgreSQL Management UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hiku-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@hiku.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - hiku-network
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./backend/database/pgadmin_servers.json:/pgadmin4/servers.json
+
+  # Activity Service - MISSING DOCKERFILE
+  # activity-service:
+  #   build:
+  #     context: ./backend/services/activity-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-activity-service
+  #   ports:
+  #     - "8081:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # Authentication Service - MISSING DOCKERFILE
+  # authentication-service:
+  #   build:
+  #     context: ./backend/services/authentication-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-auth-service
+  #   ports:
+  #     - "8082:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # Badge Service - MISSING DOCKERFILE
+  # badge-service:
+  #   build:
+  #     context: ./backend/services/badge-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-badge-service
+  #   ports:
+  #     - "8083:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # Notification Service - MISSING DOCKERFILE
+  # notification-service:
+  #   build:
+  #     context: ./backend/services/notification-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-notification-service
+  #   ports:
+  #     - "8084:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # Peaks & Hikes Service - MISSING DOCKERFILE
+  #peaks-hikes-service:
+   #  build:
+ #      context: ./backend/services/peaks-hikes-service
+#     dockerfile: Dockerfile
+#    container_name: hiku-peaks-hikes-service
+#    ports:
+#      - "8085:8080"
+#    environment:
+#      KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+#      KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+#      KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+#    networks:
+#      - hiku-network
+
+  # Scoreboards & Challenges Service - MISSING DOCKERFILE
+  # scoreboards-challenges-service:
+  #   build:
+  #     context: ./backend/services/scoreboards-challenges-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-scoreboards-challenges-service
+  #   ports:
+  #     - "8086:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # Social Feed Service - MISSING DOCKERFILE
+  # social-feed-service:
+  #   build:
+  #     context: ./backend/services/social-feed-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-social-feed-service
+  #   ports:
+  #     - "8087:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+  # User Service - HAS DOCKERFILE
+  user-service:
+    build:
+      context: ./backend/services/user-service
+      dockerfile: Dockerfile
+    container_name: hiku-user-service
+    ports:
+      - "8088:8083"
+    environment:
+      KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+      KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+      KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hiku-network
+
+  # Weather Service - MISSING DOCKERFILE
+  # weather-service:
+  #   build:
+  #     context: ./backend/services/weather-service
+  #     dockerfile: Dockerfile
+  #   container_name: hiku-weather-service
+  #   ports:
+  #     - "8089:8080"
+  #   environment:
+  #     KUMULUZEE_DATASOURCES_DEFAULT_CONNECTION_URL: "jdbc:postgresql://postgres:5432/hikudb"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_USER: "hikuuser"
+  #     KUMULUZEE_DATASOURCES_DEFAULT_PASSWORD: "hikupassword"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - hiku-network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+
+networks:
+  hiku-network:
+    driver: bridge
