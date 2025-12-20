@@ -1,0 +1,16 @@
+# Maven build artifacts
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+.env
+
+# Filip's gitignore 
+local dev folder/
