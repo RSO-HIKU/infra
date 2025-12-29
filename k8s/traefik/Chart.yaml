@@ -1,0 +1,10 @@
+apiVersion: v2
+name: traefik-ingress
+description: Traefik Ingress Controller for Hiku microservices
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+dependencies:
+  - name: traefik
+    version: "38.0.1"
+    repository: "https://traefik.github.io/charts"
