@@ -14,3 +14,9 @@ Thumbs.db
 
 # Filip's gitignore 
 local dev folder/
+
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars.*
