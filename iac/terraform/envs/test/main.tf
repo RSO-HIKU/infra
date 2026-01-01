@@ -11,18 +11,14 @@ locals {
     environment = var.environment
     owner       = var.owner_tag
   }
+
+  pg_name = lower("pg-${local.name_prefix}")
 }
 
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.name_prefix}"
   location = var.location
   tags     = local.tags
-}
-
-resource "random_string" "suffix" {
-  length  = 6
-  upper   = false
-  special = false
 }
 
 # Networking
@@ -43,17 +39,17 @@ resource "azurerm_subnet" "aks" {
 
 # Container Registry (ACR)
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${replace(local.name_prefix, "-", "")}${random_string.suffix.result}"
+  name                = "acr${replace(local.name_prefix, "-", "")}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku                 = "Basic"
-  admin_enabled       = false
+  admin_enabled       = true
   tags                = local.tags
 }
 
 # Key Vault
 resource "azurerm_key_vault" "kv" {
-  name                       = "kv-${local.name_prefix}-${random_string.suffix.result}"
+  name                       = "kv-${local.name_prefix}"
   location                   = azurerm_resource_group.rg.location
   resource_group_name        = azurerm_resource_group.rg.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
@@ -65,13 +61,6 @@ resource "azurerm_key_vault" "kv" {
   purge_protection_enabled   = false
 
   tags = local.tags
-}
-
-# Set the admin rights for the current user
-resource "azurerm_role_assignment" "kv_admin_me" {
-  scope                = azurerm_key_vault.kv.id
-  role_definition_name = "Key Vault Administrator"
-  principal_id         = data.azurerm_client_config.current.object_id
 }
 
 # AKS Cluster
@@ -108,12 +97,17 @@ resource "azurerm_kubernetes_cluster" "aks" {
     outbound_type       = "loadBalancer"
   }
 
+  key_vault_secrets_provider {
+    secret_rotation_enabled  = true
+    secret_rotation_interval = "2m"
+  }
+
   tags = local.tags
 }
 
 # Centralized logging destination
 resource "azurerm_log_analytics_workspace" "law" {
-  name                = "law-${local.name_prefix}-${random_string.suffix.result}"
+  name                = "law-${local.name_prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
@@ -137,4 +131,93 @@ resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
   principal_id         = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+}
+
+resource "azurerm_role_assignment" "kv_admin_me" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Administrator"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_role_assignment" "kv_secrets_user_csi" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_kubernetes_cluster.aks.key_vault_secrets_provider[0].secret_identity[0].object_id
+}
+
+resource "random_password" "pg_admin" {
+  length  = 24
+  special = true
+}
+
+# PostgreSQL Flexible Server
+resource "azurerm_postgresql_flexible_server" "pg" {
+  name                = local.pg_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+
+  version    = "16"
+  sku_name   = "B_Standard_B1ms"
+  storage_mb = 32768
+
+  administrator_login = "hikuadmin"
+
+  administrator_password_wo = random_password.pg_admin.result
+
+  public_network_access_enabled = true
+
+  backup_retention_days        = 7
+  geo_redundant_backup_enabled = false
+
+  tags = local.tags
+}
+
+# Database for the application
+resource "azurerm_postgresql_flexible_server_database" "app" {
+  name      = "hikudb"
+  server_id = azurerm_postgresql_flexible_server.pg.id
+  collation = "en_US.utf8"
+  charset   = "UTF8"
+}
+
+# Enable required PostgreSQL extensions
+resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.pg.id
+  value     = "UUID-OSSP,POSTGIS,PG_TRGM"
+}
+
+# Allow Azure services to access the PostgreSQL server
+resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
+  name             = "allow-azure"
+  server_id        = azurerm_postgresql_flexible_server.pg.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
+# Store the admin credentials in Key Vault
+resource "azurerm_key_vault_secret" "pg_admin_password" {
+  name         = "pg-admin-password"
+  value        = random_password.pg_admin.result
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
+}
+
+# Store the admin username in Key Vault
+resource "azurerm_key_vault_secret" "pg_admin_user" {
+  name         = "pg-admin-user"
+  value        = "hikuadmin"
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
+}
+
+# Store the PostgreSQL host in Key Vault
+resource "azurerm_key_vault_secret" "pg_host" {
+  name         = "pg-host"
+  value        = azurerm_postgresql_flexible_server.pg.fqdn
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
