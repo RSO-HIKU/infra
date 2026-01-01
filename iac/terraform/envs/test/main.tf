@@ -19,12 +19,6 @@ resource "azurerm_resource_group" "rg" {
   tags     = local.tags
 }
 
-resource "random_string" "suffix" {
-  length  = 6
-  upper   = false
-  special = false
-}
-
 # Networking
 resource "azurerm_virtual_network" "vnet" {
   name                = "vnet-${local.name_prefix}"
@@ -43,17 +37,17 @@ resource "azurerm_subnet" "aks" {
 
 # Container Registry (ACR)
 resource "azurerm_container_registry" "acr" {
-  name                = "acr${replace(local.name_prefix, "-", "")}${random_string.suffix.result}"
+  name                = "acr${replace(local.name_prefix, "-", "")}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku                 = "Basic"
-  admin_enabled       = false
+  admin_enabled       = true
   tags                = local.tags
 }
 
 # Key Vault
 resource "azurerm_key_vault" "kv" {
-  name                       = "kv-${local.name_prefix}-${random_string.suffix.result}"
+  name                       = "kv-${local.name_prefix}"
   location                   = azurerm_resource_group.rg.location
   resource_group_name        = azurerm_resource_group.rg.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
@@ -113,7 +107,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
 # Centralized logging destination
 resource "azurerm_log_analytics_workspace" "law" {
-  name                = "law-${local.name_prefix}-${random_string.suffix.result}"
+  name                = "law-${local.name_prefix}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
