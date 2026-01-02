@@ -68,19 +68,37 @@ resource "azurerm_key_vault" "kv" {
   sku_name                   = "standard"
   soft_delete_retention_days = 7
 
-  # RBAC-based access (recommended direction); keep purge protection off for test
   rbac_authorization_enabled = true
   purge_protection_enabled   = false
 
   tags = local.tags
 }
 
-resource "azurerm_public_ip" "aks_outbound" {
-  name                = "pip-aks-outbound-${local.name_prefix}"
-  resource_group_name = azurerm_kubernetes_cluster.aks.node_resource_group
+resource "azurerm_public_ip" "nat_outbound" {
+  name                = "pip-nat-outbound-${local.name_prefix}"
+  resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   allocation_method   = "Static"
   sku                 = "Standard"
+  tags                = local.tags
+}
+
+resource "azurerm_nat_gateway" "nat" {
+  name                = "nat-${local.name_prefix}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  sku_name            = "Standard"
+  tags                = local.tags
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "nat_pip" {
+  nat_gateway_id       = azurerm_nat_gateway.nat.id
+  public_ip_address_id = azurerm_public_ip.nat_outbound.id
+}
+
+resource "azurerm_subnet_nat_gateway_association" "aks" {
+  subnet_id      = azurerm_subnet.aks.id
+  nat_gateway_id = azurerm_nat_gateway.nat.id
 }
 
 # AKS Cluster
@@ -114,10 +132,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     pod_cidr            = "10.244.0.0/16"
     service_cidr        = "10.0.0.0/16"
     dns_service_ip      = "10.0.0.10"
-    outbound_type       = "loadBalancer"
-    load_balancer_profile {
-      outbound_ip_address_ids = [azurerm_public_ip.aks_outbound.id]
-    }
+    outbound_type       = "userAssignedNATGateway"
   }
 
   key_vault_secrets_provider {
@@ -126,6 +141,10 @@ resource "azurerm_kubernetes_cluster" "aks" {
   }
 
   tags = local.tags
+
+  depends_on = [
+    azurerm_subnet_nat_gateway_association.aks
+  ]
 }
 
 # Centralized logging destination
@@ -221,8 +240,15 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
 resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_aks_outbound" {
   name             = "allow-aks-outbound"
   server_id        = azurerm_postgresql_flexible_server.pg.id
-  start_ip_address = azurerm_public_ip.aks_outbound.ip_address
-  end_ip_address   = azurerm_public_ip.aks_outbound.ip_address
+  start_ip_address = azurerm_public_ip.nat_outbound.ip_address
+  end_ip_address   = azurerm_public_ip.nat_outbound.ip_address
+}
+
+resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_terraform_runner" {
+  name             = "allow-terraform-runner"
+  server_id        = azurerm_postgresql_flexible_server.pg.id
+  start_ip_address = var.terraform_runner_ip
+  end_ip_address   = var.terraform_runner_ip
 }
 
 # Store the admin credentials in Key Vault
@@ -253,13 +279,13 @@ resource "azurerm_key_vault_secret" "pg_host" {
 }
 
 # # # We set up the credentials for each microservice # # #
-resource "random_password" "activity_db_password" {
+resource "random_password" "svc_db_password" {
   for_each = var.services
   length   = 24
   special  = true
 }
 
-resource "azurerm_key_vault_secret" "activity_db_user" {
+resource "azurerm_key_vault_secret" "svc_db_user" {
   for_each     = var.services
   name         = "${each.key}-db-user"
   value        = each.value.db_user
@@ -267,14 +293,16 @@ resource "azurerm_key_vault_secret" "activity_db_user" {
   depends_on   = [azurerm_role_assignment.kv_admin_me]
 }
 
-resource "azurerm_key_vault_secret" "activity_db_password" {
+resource "azurerm_key_vault_secret" "svc_db_password" {
+  for_each     = var.services
   name         = "${each.key}-db-password"
   value        = random_password.svc_db_password[each.key].result
   key_vault_id = azurerm_key_vault.kv.id
   depends_on   = [azurerm_role_assignment.kv_admin_me]
 }
 
-resource "azurerm_key_vault_secret" "activity_db_schema" {
+resource "azurerm_key_vault_secret" "svc_db_schema" {
+  for_each     = var.services
   name         = "${each.key}-db-schema"
   value        = each.value.schema
   key_vault_id = azurerm_key_vault.kv.id
