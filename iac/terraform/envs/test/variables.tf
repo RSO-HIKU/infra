@@ -44,3 +44,7 @@ variable "services" {
     schema  = string
   }))
 }
+
+variable "terraform_runner_ip" {
+  type = string
+}
