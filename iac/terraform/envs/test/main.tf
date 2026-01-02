@@ -185,7 +185,7 @@ resource "azurerm_postgresql_flexible_server" "pg" {
 
   administrator_login = "hikuadmin"
 
-  administrator_password_wo = random_password.pg_admin.result
+  administrator_password = random_password.pg_admin.result
 
   public_network_access_enabled = true
 
@@ -253,10 +253,10 @@ resource "azurerm_key_vault_secret" "pg_host" {
 }
 
 # # # We set up the credentials for each microservice # # #
-resource "random_password" "activity_db_password"
+resource "random_password" "activity_db_password" {
   for_each = var.services
-  length  = 24
-  special = true
+  length   = 24
+  special  = true
 }
 
 resource "azurerm_key_vault_secret" "activity_db_user" {
