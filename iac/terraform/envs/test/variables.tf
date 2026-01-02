@@ -37,3 +37,10 @@ variable "kubernetes_version" {
   type    = string
   default = "1.29"
 }
+
+variable "services" {
+  type = map(object({
+    db_user = string
+    schema  = string
+  }))
+}

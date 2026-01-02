@@ -2,6 +2,18 @@ provider "azurerm" {
   features {}
 }
 
+provider "postgresql" {
+  host     = azurerm_postgresql_flexible_server.pg.fqdn
+  port     = 5432
+  database = azurerm_postgresql_flexible_server_database.app.name
+
+  username = azurerm_postgresql_flexible_server.pg.administrator_login
+  password = random_password.pg_admin.result
+
+  sslmode   = "require"
+  superuser = false
+}
+
 data "azurerm_client_config" "current" {}
 
 locals {
@@ -63,6 +75,14 @@ resource "azurerm_key_vault" "kv" {
   tags = local.tags
 }
 
+resource "azurerm_public_ip" "aks_outbound" {
+  name                = "pip-aks-outbound-${local.name_prefix}"
+  resource_group_name = azurerm_kubernetes_cluster.aks.node_resource_group
+  location            = azurerm_resource_group.rg.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
 # AKS Cluster
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = "aks-${local.name_prefix}"
@@ -95,6 +115,9 @@ resource "azurerm_kubernetes_cluster" "aks" {
     service_cidr        = "10.0.0.0/16"
     dns_service_ip      = "10.0.0.10"
     outbound_type       = "loadBalancer"
+    load_balancer_profile {
+      outbound_ip_address_ids = [azurerm_public_ip.aks_outbound.id]
+    }
   }
 
   key_vault_secrets_provider {
@@ -195,6 +218,13 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
   end_ip_address   = "0.0.0.0"
 }
 
+resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_aks_outbound" {
+  name             = "allow-aks-outbound"
+  server_id        = azurerm_postgresql_flexible_server.pg.id
+  start_ip_address = azurerm_public_ip.aks_outbound.ip_address
+  end_ip_address   = azurerm_public_ip.aks_outbound.ip_address
+}
+
 # Store the admin credentials in Key Vault
 resource "azurerm_key_vault_secret" "pg_admin_password" {
   name         = "pg-admin-password"
@@ -221,3 +251,94 @@ resource "azurerm_key_vault_secret" "pg_host" {
 
   depends_on = [azurerm_role_assignment.kv_admin_me]
 }
+
+# # # We set up the credentials for each microservice # # #
+resource "random_password" "activity_db_password"
+  for_each = var.services
+  length  = 24
+  special = true
+}
+
+resource "azurerm_key_vault_secret" "activity_db_user" {
+  for_each     = var.services
+  name         = "${each.key}-db-user"
+  value        = each.value.db_user
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+resource "azurerm_key_vault_secret" "activity_db_password" {
+  name         = "${each.key}-db-password"
+  value        = random_password.svc_db_password[each.key].result
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+resource "azurerm_key_vault_secret" "activity_db_schema" {
+  name         = "${each.key}-db-schema"
+  value        = each.value.schema
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+###########################################################
+
+# # # Create per-service login roles # # #
+resource "postgresql_role" "svc" {
+  for_each = var.services
+
+  name     = each.value.db_user
+  login    = true
+  password = random_password.svc_db_password[each.key].result
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_aks_outbound,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_azure,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+
+# Create per-service schema, owned by that role
+resource "postgresql_schema" "svc" {
+  for_each = var.services
+
+  name     = each.value.schema
+  owner    = postgresql_role.svc[each.key].name
+  database = azurerm_postgresql_flexible_server_database.app.name
+}
+
+# Allow service role to use + create objects in its schema
+resource "postgresql_grant" "schema_usage_create" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  role        = postgresql_role.svc[each.key].name
+  schema      = postgresql_schema.svc[each.key].name
+  object_type = "schema"
+  privileges  = ["USAGE", "CREATE"]
+}
+
+# Default privileges for future tables
+resource "postgresql_default_privileges" "tables" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  schema      = postgresql_schema.svc[each.key].name
+  owner       = postgresql_role.svc[each.key].name
+  role        = postgresql_role.svc[each.key].name
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+}
+
+# Default privileges for future sequences
+resource "postgresql_default_privileges" "sequences" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  schema      = postgresql_schema.svc[each.key].name
+  owner       = postgresql_role.svc[each.key].name
+  role        = postgresql_role.svc[each.key].name
+  object_type = "sequence"
+  privileges  = ["USAGE", "SELECT", "UPDATE"]
+}
+##########################################
