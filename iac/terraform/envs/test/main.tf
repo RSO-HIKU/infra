@@ -230,12 +230,12 @@ resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
 }
 
 # Allow Azure services to access the PostgreSQL server
-resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
-  name             = "allow-azure"
-  server_id        = azurerm_postgresql_flexible_server.pg.id
-  start_ip_address = "0.0.0.0"
-  end_ip_address   = "0.0.0.0"
-}
+# resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
+#   name             = "allow-azure"
+#   server_id        = azurerm_postgresql_flexible_server.pg.id
+#   start_ip_address = "0.0.0.0"
+#   end_ip_address   = "0.0.0.0"
+# }
 
 resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_aks_outbound" {
   name             = "allow-aks-outbound"
