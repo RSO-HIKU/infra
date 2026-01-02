@@ -6,7 +6,7 @@ traefik:
     replicas: 1
   
   service:
-    type: NodePort
+    type: LoadBalancer
   
   ports:
     web:

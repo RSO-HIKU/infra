@@ -80,6 +80,9 @@ resource "azurerm_public_ip" "nat_outbound" {
   location            = azurerm_resource_group.rg.location
   allocation_method   = "Static"
   sku                 = "Standard"
+
+  domain_name_label   = "traefik-${var.project}-${var.environment}"
+
   tags                = local.tags
 }
 
