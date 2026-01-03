@@ -59,3 +59,8 @@ output "tenant_id" {
   value = data.azurerm_client_config.current.tenant_id
 }
 ###########################################
+
+# Hostname provided by Azure
+output "traefik_fqdn" {
+  value = azurerm_public_ip.traefik.fqdn
+}

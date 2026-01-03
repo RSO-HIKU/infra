@@ -80,6 +80,9 @@ resource "azurerm_public_ip" "nat_outbound" {
   location            = azurerm_resource_group.rg.location
   allocation_method   = "Static"
   sku                 = "Standard"
+
+  domain_name_label   = "traefik-${var.project}-${var.environment}"
+
   tags                = local.tags
 }
 
@@ -370,3 +373,67 @@ resource "postgresql_default_privileges" "sequences" {
   privileges  = ["USAGE", "SELECT", "UPDATE"]
 }
 ##########################################
+
+# # # KeyCloak # # #
+resource "random_password" "keycloak_db_password" {
+  length  = 32
+  special = true
+}
+
+resource "postgresql_role" "keycloak" {
+  name     = "keycloak_user"
+  login    = true
+  password = random_password.keycloak_db_password.result
+}
+
+resource "postgresql_database" "keycloak" {
+  name              = "keycloak"
+  owner             = postgresql_role.keycloak.name
+  encoding          = "UTF8"
+  lc_collate        = "en_US.utf8"
+  lc_ctype          = "en_US.utf8"
+  connection_limit  = -1
+  allow_connections = true
+}
+
+resource "random_password" "keycloak_admin_password" {
+  length  = 24
+  special = true
+}
+
+resource "azurerm_key_vault_secret" "keycloak_db_username" {
+  name         = "keycloak-db-username"
+  value        = postgresql_role.keycloak.name
+  key_vault_id = azurerm_key_vault.kv.id
+}
+
+resource "azurerm_key_vault_secret" "keycloak_db_password" {
+  name         = "keycloak-db-password"
+  value        = random_password.keycloak_db_password.result
+  key_vault_id = azurerm_key_vault.kv.id
+}
+
+resource "azurerm_key_vault_secret" "keycloak_admin_username" {
+  name         = "keycloak-admin-username"
+  value        = "admin"
+  key_vault_id = azurerm_key_vault.kv.id
+}
+
+resource "azurerm_key_vault_secret" "keycloak_admin_password" {
+  name         = "keycloak-admin-password"
+  value        = random_password.keycloak_admin_password.result
+  key_vault_id = azurerm_key_vault.kv.id
+}
+
+resource "azurerm_key_vault_secret" "keycloak_db_name" {
+  name         = "keycloak-db-name"
+  value        = postgresql_database.keycloak.name
+  key_vault_id = azurerm_key_vault.kv.id
+}
+
+resource "azurerm_key_vault_secret" "keycloak_db_host" {
+  name         = "keycloak-db-host"
+  value        = azurerm_postgresql_flexible_server.pg.fqdn
+  key_vault_id = azurerm_key_vault.kv.id
+}
+####################
