@@ -324,7 +324,7 @@ resource "postgresql_role" "svc" {
   depends_on = [
     azurerm_postgresql_flexible_server_database.app,
     azurerm_postgresql_flexible_server_firewall_rule.allow_aks_outbound,
-    azurerm_postgresql_flexible_server_firewall_rule.allow_azure,
+    # azurerm_postgresql_flexible_server_firewall_rule.allow_azure,
     azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
   ]
 }
