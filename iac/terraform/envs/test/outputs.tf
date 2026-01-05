@@ -85,3 +85,25 @@ output "aks_resource_group" {
   value = azurerm_resource_group.rg.name
 }
 ######################################
+
+# # # Function App outputs # # #
+output "function_app_name" {
+  value = azurerm_windows_function_app.functions.name
+}
+
+output "function_default_hostname" {
+  value = azurerm_windows_function_app.functions.default_hostname
+}
+
+output "function_rg_name" {
+  value = azurerm_resource_group.rg.name
+}
+
+output "app_blob_storage_account_name" {
+  value = azurerm_storage_account.app_blob.name
+}
+
+output "app_blob_container_name" {
+  value = azurerm_storage_container.images.name
+}
+################################

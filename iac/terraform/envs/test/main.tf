@@ -25,6 +25,8 @@ locals {
   }
 
   pg_name = lower("pg-${local.name_prefix}")
+
+  blob_sa_name = substr(lower("st${replace(local.name_prefix, "-", "")}"), 0, 24)
 }
 
 resource "azurerm_resource_group" "rg" {
@@ -437,3 +439,163 @@ resource "azurerm_key_vault_secret" "keycloak_db_host" {
   key_vault_id = azurerm_key_vault.kv.id
 }
 ####################
+
+# # # Blob Storage + C# Function # # #
+locals {
+  # Deterministic suffix (stable) for storage account uniqueness.
+  stable_sa_suffix = substr(md5("${data.azurerm_client_config.current.subscription_id}-${local.name_prefix}"), 0, 6)
+
+  # Storage account names must be globally unique, lowercase alphanumeric, 3-24 chars.
+  app_blob_sa_name  = substr(lower("stblob${replace(local.name_prefix, "-", "")}${local.stable_sa_suffix}"), 0, 24)
+  func_host_sa_name = substr(lower("stfunc${replace(local.name_prefix, "-", "")}${local.stable_sa_suffix}"), 0, 24)
+
+  function_plan_name = "asp-func-${local.name_prefix}"
+  function_appi_name = "appi-func-${local.name_prefix}"
+  function_app_name  = "func-${local.name_prefix}"
+
+  storage_ip_rules = [
+    var.terraform_runner_ip,
+    azurerm_public_ip.nat_outbound.ip_address
+  ]
+}
+######################################
+
+# # # App Blob Storage # # #
+resource "azurerm_storage_account" "app_blob" {
+  name                     = local.app_blob_sa_name
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  # Restricted posture
+  min_tls_version                 = "TLS1_2"
+  https_traffic_only_enabled      = true
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = true
+  public_network_access_enabled   = true
+
+  network_rules {
+    default_action = "Deny"
+    ip_rules       = local.storage_ip_rules
+    bypass         = ["AzureServices"]
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_storage_container" "images" {
+  name                  = "images"
+  storage_account_id    = azurerm_storage_account.app_blob.id
+  container_access_type = "private"
+}
+############################
+
+# # # Function Host Storage # # #
+resource "azurerm_storage_account" "func_host" {
+  name                     = local.func_host_sa_name
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
+
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  min_tls_version                 = "TLS1_2"
+  https_traffic_only_enabled      = true
+  allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = true
+  public_network_access_enabled   = true
+
+  network_rules {
+    default_action = "Deny"
+    ip_rules       = local.storage_ip_rules
+    bypass         = ["AzureServices"]
+  }
+
+  tags = local.tags
+}
+#################################
+
+# # # Windows Consumption plan + App Insights # # #
+resource "azurerm_service_plan" "functions" {
+  name                = local.function_plan_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+
+  os_type  = "Windows"
+  sku_name = "Y1" # Consumption
+
+  tags = local.tags
+}
+
+resource "azurerm_application_insights" "functions" {
+  name                = local.function_appi_name
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  application_type = "web"
+  workspace_id     = azurerm_log_analytics_workspace.law.id
+
+  tags = local.tags
+}
+###################################################
+
+# # # Windows Function App (C# / .NET 10) # # #
+resource "azurerm_windows_function_app" "functions" {
+  name                = local.function_app_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+
+  service_plan_id = azurerm_service_plan.functions.id
+
+  storage_account_name       = azurerm_storage_account.func_host.name
+  storage_account_access_key = azurerm_storage_account.func_host.primary_access_key
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  site_config {
+    application_insights_connection_string = azurerm_application_insights.functions.connection_string
+
+    cors {
+      allowed_origins     = var.function_cors_allowed_origins
+      support_credentials = false
+    }
+
+    application_stack {
+      dotnet_version = var.dotnet_version # v10.0
+    }
+  }
+
+  app_settings = {
+    FUNCTIONS_EXTENSION_VERSION = "~4"
+    FUNCTIONS_WORKER_RUNTIME    = var.functions_worker_runtime # dotnet-isolated
+
+    APP_BLOB_ACCOUNT   = azurerm_storage_account.app_blob.name
+    APP_BLOB_CONTAINER = azurerm_storage_container.images.name
+  }
+
+  tags = local.tags
+
+  depends_on = [
+    azurerm_application_insights.functions,
+    azurerm_storage_account.func_host
+  ]
+}
+###############################################
+
+# # # RBAC: Function -> Storage (blobs) and Function -> KV # # #
+resource "azurerm_role_assignment" "func_blob_contributor" {
+  scope                = azurerm_storage_account.app_blob.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_windows_function_app.functions.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "func_kv_secrets_user" {
+  scope                = azurerm_key_vault.kv.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_windows_function_app.functions.identity[0].principal_id
+}
+################################################################

@@ -48,3 +48,24 @@ variable "services" {
 variable "terraform_runner_ip" {
   type = string
 }
+
+variable "function_cors_allowed_origins" {
+  type        = list(string)
+  description = "Allowed origins for the Function App CORS policy."
+  default     = [
+    "https://portal.azure.com",
+    "http://localhost:8081"
+  ]
+}
+
+variable "dotnet_version" {
+  type        = string
+  description = "Dotnet runtime version for Azure Functions."
+  default     = "v10.0"
+}
+
+variable "functions_worker_runtime" {
+  type        = string
+  description = "Azure Functions worker runtime for C#."
+  default     = "dotnet-isolated"
+}
