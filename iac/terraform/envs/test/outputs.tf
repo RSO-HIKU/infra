@@ -107,3 +107,24 @@ output "app_blob_container_name" {
   value = azurerm_storage_container.images.name
 }
 ################################
+
+# # # Frontend Static Website outputs # # #
+output "frontend_static_website_url" {
+  value = azurerm_storage_account.frontend.primary_web_endpoint
+  depends_on = [azurerm_storage_account_static_website.frontend]
+}
+
+output "frontend_static_website_host" {
+  value = azurerm_storage_account.frontend.primary_web_host
+  depends_on = [azurerm_storage_account_static_website.frontend]
+}
+
+output "frontend_storage_account_name" {
+  value = azurerm_storage_account.frontend.name
+}
+
+output "frontend_storage_account_key" {
+  value     = azurerm_storage_account.frontend.primary_access_key
+  sensitive = true
+}
+###########################################
