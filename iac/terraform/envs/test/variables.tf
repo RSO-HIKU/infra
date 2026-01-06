@@ -52,7 +52,7 @@ variable "terraform_runner_ip" {
 variable "function_cors_allowed_origins" {
   type        = list(string)
   description = "Allowed origins for the Function App CORS policy."
-  default     = [
+  default = [
     "https://portal.azure.com",
     "http://localhost:8081"
   ]

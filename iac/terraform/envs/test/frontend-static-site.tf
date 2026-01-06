@@ -13,7 +13,7 @@ resource "azurerm_storage_account" "frontend" {
   account_replication_type = "LRS"
 
   https_traffic_only_enabled = true
-  min_tls_version           = "TLS1_2"
+  min_tls_version            = "TLS1_2"
 
   # Static website hosting requires public access on the $web container content.
   allow_nested_items_to_be_public = true

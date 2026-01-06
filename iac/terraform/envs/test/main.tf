@@ -168,9 +168,9 @@ resource "azurerm_public_ip" "traefik" {
   allocation_method   = "Static"
   sku                 = "Standard"
 
-  domain_name_label   = "traefik-${var.project}-${var.environment}"
+  domain_name_label = "traefik-${var.project}-${var.environment}"
 
-  tags                = local.tags
+  tags = local.tags
 }
 
 # Allow AKS nodes to pull images from ACR
@@ -462,9 +462,9 @@ locals {
 
 # # # App Blob Storage # # #
 resource "azurerm_storage_account" "app_blob" {
-  name                     = local.app_blob_sa_name
-  resource_group_name      = azurerm_resource_group.rg.name
-  location                 = azurerm_resource_group.rg.location
+  name                = local.app_blob_sa_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
 
   account_tier             = "Standard"
   account_replication_type = "LRS"
@@ -494,9 +494,9 @@ resource "azurerm_storage_container" "images" {
 
 # # # Function Host Storage # # #
 resource "azurerm_storage_account" "func_host" {
-  name                     = local.func_host_sa_name
-  resource_group_name      = azurerm_resource_group.rg.name
-  location                 = azurerm_resource_group.rg.location
+  name                = local.func_host_sa_name
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
 
   account_tier             = "Standard"
   account_replication_type = "LRS"
