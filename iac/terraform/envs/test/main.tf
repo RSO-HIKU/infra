@@ -217,6 +217,10 @@ resource "azurerm_postgresql_flexible_server" "pg" {
   geo_redundant_backup_enabled = false
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 # Database for the application
@@ -407,36 +411,48 @@ resource "azurerm_key_vault_secret" "keycloak_db_username" {
   name         = "keycloak-db-username"
   value        = postgresql_role.keycloak.name
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_password" {
   name         = "keycloak-db-password"
   value        = random_password.keycloak_db_password.result
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_admin_username" {
   name         = "keycloak-admin-username"
   value        = "admin"
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_admin_password" {
   name         = "keycloak-admin-password"
   value        = random_password.keycloak_admin_password.result
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_name" {
   name         = "keycloak-db-name"
   value        = postgresql_database.keycloak.name
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_host" {
   name         = "keycloak-db-host"
   value        = azurerm_postgresql_flexible_server.pg.fqdn
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 ####################
 
@@ -476,11 +492,11 @@ resource "azurerm_storage_account" "app_blob" {
   shared_access_key_enabled       = true
   public_network_access_enabled   = true
 
-  network_rules {
-    default_action = "Deny"
-    ip_rules       = local.storage_ip_rules
-    bypass         = ["AzureServices"]
-  }
+  # network_rules {
+  #   default_action = "Deny"
+  #   ip_rules       = local.storage_ip_rules
+  #   bypass         = ["AzureServices"]
+  # }
 
   tags = local.tags
 }
@@ -507,11 +523,11 @@ resource "azurerm_storage_account" "func_host" {
   shared_access_key_enabled       = true
   public_network_access_enabled   = true
 
-  network_rules {
-    default_action = "Deny"
-    ip_rules       = local.storage_ip_rules
-    bypass         = ["AzureServices"]
-  }
+  # network_rules {
+  #   default_action = "Deny"
+  #   ip_rules       = local.storage_ip_rules
+  #   bypass         = ["AzureServices"]
+  # }
 
   tags = local.tags
 }
