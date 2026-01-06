@@ -110,12 +110,12 @@ output "app_blob_container_name" {
 
 # # # Frontend Static Website outputs # # #
 output "frontend_static_website_url" {
-  value = azurerm_storage_account.frontend.primary_web_endpoint
+  value      = azurerm_storage_account.frontend.primary_web_endpoint
   depends_on = [azurerm_storage_account_static_website.frontend]
 }
 
 output "frontend_static_website_host" {
-  value = azurerm_storage_account.frontend.primary_web_host
+  value      = azurerm_storage_account.frontend.primary_web_host
   depends_on = [azurerm_storage_account_static_website.frontend]
 }
 
