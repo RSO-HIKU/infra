@@ -684,3 +684,24 @@ resource "azurerm_role_assignment" "aks_kubelet_network_contributor_on_subnet" {
 
   depends_on = [azurerm_kubernetes_cluster.aks]
 }
+
+# # # RabbitMQ credentials and k8s secret # # #
+resource "random_password" "rabbitmq_pass" {
+  length  = 24
+  special = true
+}
+
+resource "azurerm_key_vault_secret" "rabbitmq_user" {
+  name         = "rabbitmq-default-user"
+  value        = "hiku-rabbit-user"
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+resource "azurerm_key_vault_secret" "rabbitmq_pass" {
+  name         = "rabbitmq-default-pass"
+  value        = random_password.rabbitmq_pass.result
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+################################################
