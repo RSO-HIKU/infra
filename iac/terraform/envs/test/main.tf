@@ -662,3 +662,25 @@ resource "azurerm_role_assignment" "func_kv_secrets_user" {
   principal_id         = azurerm_windows_function_app.functions.identity[0].principal_id
 }
 ################################################################
+
+# Allow AKS control plane identity to manage networking on the node subnet
+resource "azurerm_role_assignment" "aks_network_contributor_on_subnet" {
+  scope                = azurerm_subnet.aks.id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_kubernetes_cluster.aks.identity[0].principal_id
+
+  skip_service_principal_aad_check = true
+
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
+resource "azurerm_role_assignment" "aks_kubelet_network_contributor_on_subnet" {
+  scope                = azurerm_subnet.aks.id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+
+  # Helps with eventual-consistency issues when identities are freshly created
+  skip_service_principal_aad_check = true
+
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
