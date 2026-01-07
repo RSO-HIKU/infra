@@ -456,6 +456,53 @@ resource "azurerm_key_vault_secret" "keycloak_db_host" {
 }
 ####################
 
+# # # Keycloak DB schema setup # # #
+resource "postgresql_schema" "keycloak" {
+  name     = "keycloak"
+  owner    = postgresql_role.keycloak.name
+  database = postgresql_database.keycloak.name
+
+  depends_on = [postgresql_database.keycloak]
+}
+
+# (Optional but fine) Explicitly grant schema privileges to the Keycloak role
+resource "postgresql_grant" "keycloak_schema_usage_create" {
+  database    = postgresql_database.keycloak.name
+  role        = postgresql_role.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  object_type = "schema"
+  privileges  = ["USAGE", "CREATE"]
+}
+
+# Default privileges for tables created in that schema by the owner
+resource "postgresql_default_privileges" "keycloak_tables" {
+  database    = postgresql_database.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  owner       = postgresql_role.keycloak.name
+  role        = postgresql_role.keycloak.name
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+}
+
+resource "postgresql_default_privileges" "keycloak_sequences" {
+  database    = postgresql_database.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  owner       = postgresql_role.keycloak.name
+  role        = postgresql_role.keycloak.name
+  object_type = "sequence"
+  privileges  = ["USAGE", "SELECT", "UPDATE"]
+}
+
+# Store schema name in Key Vault so the Keycloak chart can consume it via CSI
+resource "azurerm_key_vault_secret" "keycloak_db_schema" {
+  name         = "keycloak-db-schema"
+  value        = postgresql_schema.keycloak.name
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
+}
+####################################
+
 # # # Blob Storage + C# Function # # #
 locals {
   # Deterministic suffix (stable) for storage account uniqueness.
