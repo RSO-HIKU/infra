@@ -235,8 +235,40 @@ resource "azurerm_postgresql_flexible_server_database" "app" {
 resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
   name      = "azure.extensions"
   server_id = azurerm_postgresql_flexible_server.pg.id
-  value     = "UUID-OSSP,POSTGIS,PG_TRGM"
+  value     = "uuid-ossp,postgis,pg_trgm"
 }
+
+# # # Install extensions in the DB # # #
+resource "postgresql_extension" "postgis" {
+  name = "postgis"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+
+resource "postgresql_extension" "uuid_ossp" {
+  name = "uuid-ossp"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+
+resource "postgresql_extension" "pg_trgm" {
+  name = "pg_trgm"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+########################################
 
 # Allow Azure services to access the PostgreSQL server
 # resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
