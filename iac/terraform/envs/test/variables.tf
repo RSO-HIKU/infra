@@ -35,7 +35,7 @@ variable "node_count" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "1.29"
+  default = "1.33.5"
 }
 
 variable "services" {
@@ -68,4 +68,20 @@ variable "functions_worker_runtime" {
   type        = string
   description = "Azure Functions worker runtime for C#."
   default     = "dotnet-isolated"
+}
+
+
+variable "traefik_web_nodeport" {
+  type    = number
+  default = 31823
+}
+
+variable "traefik_websecure_nodeport" {
+  type    = number
+  default = 32368
+}
+
+variable "traefik_nodeport_nsg_rule_priority" {
+  type    = number
+  default = 510
 }

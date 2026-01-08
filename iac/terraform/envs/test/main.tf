@@ -217,6 +217,10 @@ resource "azurerm_postgresql_flexible_server" "pg" {
   geo_redundant_backup_enabled = false
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 # Database for the application
@@ -231,8 +235,40 @@ resource "azurerm_postgresql_flexible_server_database" "app" {
 resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
   name      = "azure.extensions"
   server_id = azurerm_postgresql_flexible_server.pg.id
-  value     = "UUID-OSSP,POSTGIS,PG_TRGM"
+  value     = "uuid-ossp,postgis,pg_trgm"
 }
+
+# # # Install extensions in the DB # # #
+resource "postgresql_extension" "postgis" {
+  name = "postgis"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+
+resource "postgresql_extension" "uuid_ossp" {
+  name = "uuid-ossp"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+
+resource "postgresql_extension" "pg_trgm" {
+  name = "pg_trgm"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.app,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_terraform_runner,
+  ]
+}
+########################################
 
 # Allow Azure services to access the PostgreSQL server
 # resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure" {
@@ -407,38 +443,97 @@ resource "azurerm_key_vault_secret" "keycloak_db_username" {
   name         = "keycloak-db-username"
   value        = postgresql_role.keycloak.name
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_password" {
   name         = "keycloak-db-password"
   value        = random_password.keycloak_db_password.result
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_admin_username" {
   name         = "keycloak-admin-username"
   value        = "admin"
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_admin_password" {
   name         = "keycloak-admin-password"
   value        = random_password.keycloak_admin_password.result
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_name" {
   name         = "keycloak-db-name"
   value        = postgresql_database.keycloak.name
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 
 resource "azurerm_key_vault_secret" "keycloak_db_host" {
   name         = "keycloak-db-host"
   value        = azurerm_postgresql_flexible_server.pg.fqdn
   key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
 }
 ####################
+
+# # # Keycloak DB schema setup # # #
+resource "postgresql_schema" "keycloak" {
+  name     = "keycloak"
+  owner    = postgresql_role.keycloak.name
+  database = postgresql_database.keycloak.name
+
+  depends_on = [postgresql_database.keycloak]
+}
+
+# (Optional but fine) Explicitly grant schema privileges to the Keycloak role
+resource "postgresql_grant" "keycloak_schema_usage_create" {
+  database    = postgresql_database.keycloak.name
+  role        = postgresql_role.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  object_type = "schema"
+  privileges  = ["USAGE", "CREATE"]
+}
+
+# Default privileges for tables created in that schema by the owner
+resource "postgresql_default_privileges" "keycloak_tables" {
+  database    = postgresql_database.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  owner       = postgresql_role.keycloak.name
+  role        = postgresql_role.keycloak.name
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+}
+
+resource "postgresql_default_privileges" "keycloak_sequences" {
+  database    = postgresql_database.keycloak.name
+  schema      = postgresql_schema.keycloak.name
+  owner       = postgresql_role.keycloak.name
+  role        = postgresql_role.keycloak.name
+  object_type = "sequence"
+  privileges  = ["USAGE", "SELECT", "UPDATE"]
+}
+
+# Store schema name in Key Vault so the Keycloak chart can consume it via CSI
+resource "azurerm_key_vault_secret" "keycloak_db_schema" {
+  name         = "keycloak-db-schema"
+  value        = postgresql_schema.keycloak.name
+  key_vault_id = azurerm_key_vault.kv.id
+
+  depends_on = [azurerm_role_assignment.kv_admin_me]
+}
+####################################
 
 # # # Blob Storage + C# Function # # #
 locals {
@@ -476,11 +571,11 @@ resource "azurerm_storage_account" "app_blob" {
   shared_access_key_enabled       = true
   public_network_access_enabled   = true
 
-  network_rules {
-    default_action = "Deny"
-    ip_rules       = local.storage_ip_rules
-    bypass         = ["AzureServices"]
-  }
+  # network_rules {
+  #   default_action = "Deny"
+  #   ip_rules       = local.storage_ip_rules
+  #   bypass         = ["AzureServices"]
+  # }
 
   tags = local.tags
 }
@@ -507,11 +602,11 @@ resource "azurerm_storage_account" "func_host" {
   shared_access_key_enabled       = true
   public_network_access_enabled   = true
 
-  network_rules {
-    default_action = "Deny"
-    ip_rules       = local.storage_ip_rules
-    bypass         = ["AzureServices"]
-  }
+  # network_rules {
+  #   default_action = "Deny"
+  #   ip_rules       = local.storage_ip_rules
+  #   bypass         = ["AzureServices"]
+  # }
 
   tags = local.tags
 }
@@ -599,3 +694,44 @@ resource "azurerm_role_assignment" "func_kv_secrets_user" {
   principal_id         = azurerm_windows_function_app.functions.identity[0].principal_id
 }
 ################################################################
+
+# Allow AKS control plane identity to manage networking on the node subnet
+resource "azurerm_role_assignment" "aks_network_contributor_on_subnet" {
+  scope                = azurerm_subnet.aks.id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_kubernetes_cluster.aks.identity[0].principal_id
+
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
+resource "azurerm_role_assignment" "aks_kubelet_network_contributor_on_subnet" {
+  scope                = azurerm_subnet.aks.id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+
+  # Helps with eventual-consistency issues when identities are freshly created
+  skip_service_principal_aad_check = true
+
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
+# # # RabbitMQ credentials and k8s secret # # #
+resource "random_password" "rabbitmq_pass" {
+  length  = 24
+  special = true
+}
+
+resource "azurerm_key_vault_secret" "rabbitmq_user" {
+  name         = "rabbitmq-default-user"
+  value        = "hiku-rabbit-user"
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+resource "azurerm_key_vault_secret" "rabbitmq_pass" {
+  name         = "rabbitmq-default-pass"
+  value        = random_password.rabbitmq_pass.result
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+################################################
