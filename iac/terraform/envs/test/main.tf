@@ -361,7 +361,7 @@ resource "postgresql_role" "svc" {
   login    = true
   password = random_password.svc_db_password[each.key].result
 
-  connection_limit = 3
+  connection_limit = 4
 
   depends_on = [
     azurerm_postgresql_flexible_server_database.app,
