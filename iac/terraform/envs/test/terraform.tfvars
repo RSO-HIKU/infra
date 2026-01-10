@@ -17,3 +17,8 @@ services = {
   user                   = { db_user = "user_user", schema = "user_service" }
   weather                = { db_user = "weather_user", schema = "weather_service" }
 }
+
+function_cors_allowed_origins = [
+  "https://stwebhikutestplc.z36.web.core.windows.net",
+  "https://portal.azure.com"
+]

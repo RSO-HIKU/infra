@@ -361,8 +361,6 @@ resource "postgresql_role" "svc" {
   login    = true
   password = random_password.svc_db_password[each.key].result
 
-  connection_limit = 4
-
   depends_on = [
     azurerm_postgresql_flexible_server_database.app,
     azurerm_postgresql_flexible_server_firewall_rule.allow_aks_outbound,
@@ -573,7 +571,7 @@ resource "azurerm_storage_account" "app_blob" {
   # Restricted posture
   min_tls_version                 = "TLS1_2"
   https_traffic_only_enabled      = true
-  allow_nested_items_to_be_public = false
+  allow_nested_items_to_be_public = true
   shared_access_key_enabled       = true
   public_network_access_enabled   = true
 
@@ -589,7 +587,7 @@ resource "azurerm_storage_account" "app_blob" {
 resource "azurerm_storage_container" "images" {
   name                  = "images"
   storage_account_id    = azurerm_storage_account.app_blob.id
-  container_access_type = "private"
+  container_access_type = "blob"
 }
 ############################
 
@@ -741,3 +739,98 @@ resource "azurerm_key_vault_secret" "rabbitmq_pass" {
   depends_on   = [azurerm_role_assignment.kv_admin_me]
 }
 ################################################
+
+# # # Migrator roles # # #
+resource "random_password" "svc_migrator_db_password" {
+  for_each = var.services
+  length   = 24
+  special  = true
+}
+
+resource "postgresql_role" "svc_migrator" {
+  for_each = var.services
+
+  name     = "${each.value.db_user}_migrator"
+  login    = true
+  password = random_password.svc_migrator_db_password[each.key].result
+
+  inherit          = true
+  connection_limit = 2
+}
+
+# Let migrator use the schema (DDL requires CREATE on schema)
+resource "postgresql_grant" "migrator_schema_usage_create" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  role        = postgresql_role.svc_migrator[each.key].name
+  schema      = postgresql_schema.svc[each.key].name
+  object_type = "schema"
+  privileges  = ["USAGE", "CREATE"]
+}
+
+# Store migrator DB username in Key Vault
+resource "azurerm_key_vault_secret" "svc_db_migrator_user" {
+  for_each     = var.services
+  name         = "${each.key}-db-migrator-user"
+  value        = postgresql_role.svc_migrator[each.key].name
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+# Store migrator DB password in Key Vault
+resource "azurerm_key_vault_secret" "svc_db_migrator_password" {
+  for_each     = var.services
+  name         = "${each.key}-db-migrator-password"
+  value        = random_password.svc_migrator_db_password[each.key].result
+  key_vault_id = azurerm_key_vault.kv.id
+  depends_on   = [azurerm_role_assignment.kv_admin_me]
+}
+
+# Allow migrator to read/write all existing tables in the schema
+resource "postgresql_grant" "migrator_table_dml" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  role        = postgresql_role.svc_migrator[each.key].name
+  schema      = postgresql_schema.svc[each.key].name
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+
+  depends_on = [
+    postgresql_schema.svc,
+    postgresql_role.svc_migrator
+  ]
+}
+
+# Privileges apply automatically to any future tables
+resource "postgresql_default_privileges" "migrator_tables" {
+  for_each = var.services
+
+  database    = azurerm_postgresql_flexible_server_database.app.name
+  schema      = postgresql_schema.svc[each.key].name
+  owner       = postgresql_role.svc[each.key].name
+  role        = postgresql_role.svc_migrator[each.key].name
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+
+  depends_on = [
+    postgresql_schema.svc,
+    postgresql_role.svc_migrator
+  ]
+}
+
+# Allow migrator to act with owner privileges by making it a member of the service role.
+# This enables ALTER TABLE / DDL on objects owned by the service role.
+resource "postgresql_grant_role" "svc_migrator_is_member_of_svc" {
+  for_each = var.services
+
+  role       = postgresql_role.svc_migrator[each.key].name
+  grant_role = postgresql_role.svc[each.key].name
+
+  depends_on = [
+    postgresql_role.svc,
+    postgresql_role.svc_migrator
+  ]
+}
+##########################
