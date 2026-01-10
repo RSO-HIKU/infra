@@ -116,6 +116,8 @@ resource "azurerm_kubernetes_cluster" "aks" {
     node_count           = var.node_count
     vnet_subnet_id       = azurerm_subnet.aks.id
     orchestrator_version = var.kubernetes_version
+
+    temporary_name_for_rotation = "sysrot"
   }
 
   identity {
@@ -359,6 +361,8 @@ resource "postgresql_role" "svc" {
   login    = true
   password = random_password.svc_db_password[each.key].result
 
+  connection_limit = 3
+
   depends_on = [
     azurerm_postgresql_flexible_server_database.app,
     azurerm_postgresql_flexible_server_firewall_rule.allow_aks_outbound,
@@ -422,6 +426,8 @@ resource "postgresql_role" "keycloak" {
   name     = "keycloak_user"
   login    = true
   password = random_password.keycloak_db_password.result
+
+  connection_limit = 8
 }
 
 resource "postgresql_database" "keycloak" {
