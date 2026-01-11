@@ -424,8 +424,6 @@ resource "postgresql_role" "keycloak" {
   name     = "keycloak_user"
   login    = true
   password = random_password.keycloak_db_password.result
-
-  connection_limit = 8
 }
 
 resource "postgresql_database" "keycloak" {
